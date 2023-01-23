@@ -17,9 +17,11 @@ class Interface(cmd.Cmd):
     prompt = '# '
 
     def __init__(self, ws):
+        if ws.endswith('/'):
+            ws = ws[:len(ws)-1]
         self.ws = ws
         Pkg = namedtuple('Pkg', ['path', 'pkg', 'repository'])
-        self.pkgs = {pkg['name']: Pkg(path, pkg, get_repository(Path(ws)/path)[len(ws):]) for (path, pkg) in catkin_pkg.packages.find_packages(ws).items()}
+        self.pkgs = {pkg['name']: Pkg(path, pkg, get_repository(Path(ws)/path)[len(ws)+1:]) for (path, pkg) in catkin_pkg.packages.find_packages(ws).items()}
 
         self.remaining = set([p.repository for p in self.pkgs.values()])
         self.selection = set()
