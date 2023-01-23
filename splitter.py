@@ -139,4 +139,7 @@ class Interface(cmd.Cmd):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print("usage: splitter.py <path to workspace>")
+        sys.exit(1)
     Interface(sys.argv[1]).cmdloop()
