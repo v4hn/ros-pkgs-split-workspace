@@ -17,7 +17,9 @@ class Interface(cmd.Cmd):
     intro = ''
     prompt = '# '
 
-    def columnize(self, entries, columns= os.get_terminal_size().columns-1):
+    def columnize(self, entries, columns= 0 ):
+        if columns == 0:
+            columns = os.get_terminal_size().columns-1
         super().columnize(list(entries), columns)
 
     def __init__(self, ws):
