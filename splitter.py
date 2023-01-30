@@ -3,6 +3,7 @@
 
 import catkin_pkg.packages
 import sys
+import os
 import cmd
 from collections import namedtuple
 from pathlib import Path
@@ -16,8 +17,8 @@ class Interface(cmd.Cmd):
     intro = ''
     prompt = '# '
 
-    def columnize(self, entries):
-        super().columnize(list(entries), 150)
+    def columnize(self, entries, columns= os.get_terminal_size().columns-1):
+        super().columnize(list(entries), columns)
 
     def __init__(self, ws):
         if ws.endswith('/'):
