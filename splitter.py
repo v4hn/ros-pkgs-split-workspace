@@ -87,7 +87,7 @@ class Interface(cmd.Cmd):
 
         self.last_added_repos = new_repos
         self.columnize(list(new_repos))
-        print(f"added {len(new_repos)} repositories to selection")
+        print(f"\nadded {len(new_repos)} repositories to selection")
 
     def complete_drop(self, text, line, begidx, endidx):
         return [p for p in self.selection if p.startswith(text)]
@@ -110,16 +110,16 @@ class Interface(cmd.Cmd):
     def do_selection(self, line):
         selected_pkgs = [n for (n, p) in self.pkgs.items() if p.repository in self.selection]
         self.columnize(sorted(selected_pkgs))
-        print(f"{len(selected_pkgs)} packages selected\n")
+        print(f"\n{len(selected_pkgs)} packages selected\n")
 
         self.columnize(sorted(list(self.selection)))
-        print(f"{len(self.selection)} repositories selected")
+        print(f"\n{len(self.selection)} repositories selected")
 
     # TODO: export selection in repos file
 
     def do_remaining(self, line):
         self.columnize(sorted(self.remaining))
-        print(f"{len(self.remaining)} repositories remaining")
+        print(f"\n{len(self.remaining)} repositories remaining")
 
     def collect_dependencies(self, pkg):
         deps = set()
