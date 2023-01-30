@@ -61,8 +61,8 @@ class Interface(cmd.Cmd):
         print()
 
         siblings = self.find_all_pkg_in_repository(pkg)
-        print(f"others in repository {pkg.repository}\n"
-              "--------------------")
+        header = f"others in repository {pkg.repository}"
+        print(header + "\n" + ("-" * len(header)))
         self.columnize(list(set(siblings).difference([pkg_name])))
         print()
 
