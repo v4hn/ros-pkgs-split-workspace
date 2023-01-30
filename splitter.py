@@ -4,6 +4,7 @@
 import catkin_pkg.packages
 import sys
 import os
+import subprocess
 import cmd
 from collections import namedtuple
 from pathlib import Path
@@ -149,9 +150,41 @@ class Interface(cmd.Cmd):
         self.columnize(sorted(list(self.selection)))
         print(f"{len(self.selection)} repositories selected")
 
-    # TODO: export selection in repos file
     # TODO: forget repositories in selection
     # TODO: allow selection of explicitly parallel groups
+
+    def do_export(self, line):
+        "export selection to <argument>.repos file"
+        with open(f'{line}.repos', 'w') as file:
+            file.write("repositories:\n")
+            ws= Path(self.ws)
+            for repository in self.selection:
+                version = subprocess.run(
+                    ['git', 'symbolic-ref', '--short', 'HEAD'],
+                    stdout=subprocess.PIPE,
+                    cwd=ws/repository,
+                    text=True,
+                    ).stdout.strip()
+                remote = subprocess.run(
+                    'git for-each-ref --format="%(upstream:remotename)" "$(git symbolic-ref -q HEAD)"',
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    cwd=ws/repository,
+                    text=True,
+                    ).stdout.strip()
+                url = subprocess.run(
+                    ['git', 'remote', 'get-url', remote],
+                    stdout=subprocess.PIPE,
+                    cwd=ws/repository,
+                    text=True
+                    ).stdout.strip()
+                file.write(
+                    f"  {repository}:\n"
+                    f"    type: git\n"
+                    f"    url: {url}\n"
+                    f"    version: {version}\n"
+                )
+            print(f"wrote selection to file {line}.repos")
 
     def do_remaining(self, line):
         "print information on all unselected repositories/packages"
