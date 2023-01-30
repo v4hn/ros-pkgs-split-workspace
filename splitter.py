@@ -79,13 +79,15 @@ class Interface(cmd.Cmd):
         print()
 
     def do_list(self, line):
+        "List all packages in the workspace"
         self.columnize(self.pkgs.keys())
         print(f'{len(self.pkgs)} packages in workspace')
 
     def complete_add(self, text, line, begidx, endidx):
-        return [p for p in self.pkgs.keys() if p.startswith(text)]
+        return [p for p in self.pkgs.keys() if p.startswith(text) and self.pkgs[p].repository in self.remaining]
 
     def do_add(self, pkg):
+        "Add repository of <package> and all dependencies of the repository to the selection"
         repo = self.pkgs[pkg].repository
         if repo in self.selection:
             print(f"'{repo}' containing package {pkg} was already added")
@@ -108,6 +110,7 @@ class Interface(cmd.Cmd):
         return [p for p in self.selection if p.startswith(text)]
 
     def do_drop(self, repository):
+        "Drop <repository> and all inverse dependencies from the selection"
         if repository not in self.selection:
             print(f"{repository} is not selected")
             return
@@ -120,6 +123,7 @@ class Interface(cmd.Cmd):
         print(f"dropped repository {repository}")
 
     def do_undo(self, line):
+        "Undo last add or drop command"
         if self.last_command.name == '':
             print(f"there is no command to undo")
         print(f"undo {self.last_command.name}: ", end='')
@@ -137,6 +141,7 @@ class Interface(cmd.Cmd):
         self.last_command = self.Command()
 
     def do_selection(self, line):
+        "print information on current selection"
         selected_pkgs = [n for (n, p) in self.pkgs.items() if p.repository in self.selection]
         self.columnize(sorted(selected_pkgs))
         print(f"{len(selected_pkgs)} packages selected\n")
@@ -145,8 +150,11 @@ class Interface(cmd.Cmd):
         print(f"{len(self.selection)} repositories selected")
 
     # TODO: export selection in repos file
+    # TODO: forget repositories in selection
+    # TODO: allow selection of explicitly parallel groups
 
     def do_remaining(self, line):
+        "print information on all unselected repositories/packages"
         remaining_pkgs = [n for (n, p) in self.pkgs.items() if p.repository in self.remaining]
         self.columnize(sorted(remaining_pkgs))
         print(f"{len(remaining_pkgs)} packages remaining\n")
