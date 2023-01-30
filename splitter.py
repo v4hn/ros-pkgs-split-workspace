@@ -66,7 +66,6 @@ class Interface(cmd.Cmd):
         print()
 
     def do_list(self, line):
-        print("TODO: only show unselected")
         self.columnize(self.pkgs.keys())
         print(f'\n{len(self.pkgs)} packages in workspace')
 
