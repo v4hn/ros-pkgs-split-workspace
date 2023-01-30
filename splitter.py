@@ -26,12 +26,21 @@ class Interface(cmd.Cmd):
         if ws.endswith('/'):
             ws = ws[:len(ws)-1]
         self.ws = ws
-        Pkg = namedtuple('Pkg', ['path', 'pkg', 'repository'])
-        self.pkgs = {pkg['name']: Pkg(path, pkg, get_repository(Path(ws)/path)[len(ws)+1:]) for (path, pkg) in catkin_pkg.packages.find_packages(ws).items()}
 
+        self.Pkg = namedtuple('Pkg', ['path', 'pkg', 'repository'])
+
+        # index of all packages in workspace
+        self.pkgs = {pkg['name']: self.Pkg(path, pkg, get_repository(Path(ws)/path)[len(ws)+1:]) for (path, pkg) in catkin_pkg.packages.find_packages(ws).items()}
+
+        # list of unselected repository names
         self.remaining = set([p.repository for p in self.pkgs.values()])
+
+        # selected repository names
         self.selection = set()
-        self.last_added_repos = [] # undo last add
+
+        # keep last action around to support undo
+        self.Command = namedtuple('Command', ['name', 'pkgs', 'repos'], defaults=["", [], []])
+        self.last_command = self.Command()
 
         super().__init__(completekey='tab')
 
@@ -44,6 +53,7 @@ class Interface(cmd.Cmd):
         return [p for p in self.pkgs if p.startswith(text)]
 
     def do_inspect(self, pkg_name):
+        "Inspect a package showing its dependencies and repository"
         if pkg_name not in self.pkgs:
             print(f"package '{pkg_name}' is not known")
             return
@@ -70,7 +80,7 @@ class Interface(cmd.Cmd):
 
     def do_list(self, line):
         self.columnize(self.pkgs.keys())
-        print(f'\n{len(self.pkgs)} packages in workspace')
+        print(f'{len(self.pkgs)} packages in workspace')
 
     def complete_add(self, text, line, begidx, endidx):
         return [p for p in self.pkgs.keys() if p.startswith(text)]
@@ -90,9 +100,9 @@ class Interface(cmd.Cmd):
         self.selection.update(new_repos)
         self.remaining.difference_update(new_repos)
 
-        self.last_added_repos = new_repos
+        self.last_command = self.Command('add', pkgs= [], repos = new_repos)
         self.columnize(new_repos)
-        print(f"\nadded {len(new_repos)} repositories to selection")
+        print(f"added {len(new_repos)} repositories to selection")
 
     def complete_drop(self, text, line, begidx, endidx):
         return [p for p in self.selection if p.startswith(text)]
@@ -106,29 +116,43 @@ class Interface(cmd.Cmd):
         self.remaining.add(repository)
         print("TODO: drop all downstream dependencies, otherwise state is inconsistent")
 
+        self.last_command = self.Command('drop', pkgs=[], repos=[repository])
+        print(f"dropped repository {repository}")
+
     def do_undo(self, line):
-        print("TODO: undo drop as well")
-        self.selection = self.selection.difference(self.last_added_repos)
-        print(f"removed {len(self.last_added_repos)} repositories from selection again.")
-        self.last_added_repos = []
+        if self.last_command.name == '':
+            print(f"there is no command to undo")
+        print(f"undo {self.last_command.name}: ", end='')
+        if self.last_command.name == 'add':
+            self.selection = self.selection.difference(self.last_command.repos)
+            self.remaining.update(self.last_command.repos)
+            print(f"removed {len(self.last_command.repos)} repositories from selection again.")
+        elif self.last_command.name == 'drop':
+            self.remaining = self.remaining.difference(self.last_command.repos)
+            self.selection.update(self.last_command.repos)
+            print(f"added {len(self.last_command.repos)} repositories to selection again.")
+        else:
+            print(f"TODO: undo does not support '{self.last_command.name}'. Ignoring command.")
+            return
+        self.last_command = self.Command()
 
     def do_selection(self, line):
         selected_pkgs = [n for (n, p) in self.pkgs.items() if p.repository in self.selection]
         self.columnize(sorted(selected_pkgs))
-        print(f"\n{len(selected_pkgs)} packages selected\n")
+        print(f"{len(selected_pkgs)} packages selected\n")
 
         self.columnize(sorted(list(self.selection)))
-        print(f"\n{len(self.selection)} repositories selected")
+        print(f"{len(self.selection)} repositories selected")
 
     # TODO: export selection in repos file
 
     def do_remaining(self, line):
         remaining_pkgs = [n for (n, p) in self.pkgs.items() if p.repository in self.remaining]
         self.columnize(sorted(remaining_pkgs))
-        print(f"\n{len(remaining_pkgs)} packages remaining\n")
+        print(f"{len(remaining_pkgs)} packages remaining\n")
 
         self.columnize(sorted(self.remaining))
-        print(f"\n{len(self.remaining)} repositories remaining")
+        print(f"{len(self.remaining)} repositories remaining")
 
     def collect_dependencies(self, pkg):
         deps = set()
