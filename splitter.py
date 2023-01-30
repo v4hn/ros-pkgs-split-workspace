@@ -16,6 +16,9 @@ class Interface(cmd.Cmd):
     intro = ''
     prompt = '# '
 
+    def columnize(self, entries):
+        super().columnize(list(entries), 150)
+
     def __init__(self, ws):
         if ws.endswith('/'):
             ws = ws[:len(ws)-1]
@@ -47,24 +50,24 @@ class Interface(cmd.Cmd):
         exec_deps = [d.name for d in pkg.pkg['exec_depends'] if d.name in self.pkgs]
         print("exec deps\n"
               "---------")
-        self.flist(exec_deps)
+        self.columnize(exec_deps)
         print()
 
         build_deps = [d.name for d in pkg.pkg['build_depends'] if d.name in self.pkgs]
         print("build deps\n"
               "----------")
-        self.flist(build_deps)
+        self.columnize(build_deps)
         print()
 
         siblings = self.find_all_pkg_in_repository(pkg)
         print(f"others in repository {pkg.repository}\n"
               "--------------------")
-        self.flist(list(set(siblings).difference([pkg_name])))
+        self.columnize(list(set(siblings).difference([pkg_name])))
         print()
 
     def do_list(self, line):
         print("TODO: only show unselected")
-        self.columnize([p for p in self.pkgs.keys()], 120)
+        self.columnize(self.pkgs.keys())
         print(f'\n{len(self.pkgs)} packages in workspace')
 
     def complete_add(self, text, line, begidx, endidx):
@@ -86,7 +89,7 @@ class Interface(cmd.Cmd):
         self.remaining.difference_update(new_repos)
 
         self.last_added_repos = new_repos
-        self.columnize(list(new_repos))
+        self.columnize(new_repos)
         print(f"\nadded {len(new_repos)} repositories to selection")
 
     def complete_drop(self, text, line, begidx, endidx):
@@ -118,6 +121,10 @@ class Interface(cmd.Cmd):
     # TODO: export selection in repos file
 
     def do_remaining(self, line):
+        remaining_pkgs = [n for (n, p) in self.pkgs.items() if p.repository in self.remaining]
+        self.columnize(sorted(remaining_pkgs))
+        print(f"\n{len(remaining_pkgs)} packages remaining\n")
+
         self.columnize(sorted(self.remaining))
         print(f"\n{len(self.remaining)} repositories remaining")
 
@@ -130,9 +137,6 @@ class Interface(cmd.Cmd):
             rec_deps.update(self.collect_dependencies(d))
         deps.update(rec_deps)
         return deps
-
-    def flist(self, lst):
-        self.columnize(lst)
 
     def find_all_pkg_in_repository(self, pkg):
         return [n for (n,p) in self.pkgs.items() if p.repository == pkg.repository]
