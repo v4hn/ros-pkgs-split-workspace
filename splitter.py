@@ -96,7 +96,7 @@ class Interface(cmd.Cmd):
 
         pkg_deps = set()
         for sibling in [n for (n, p) in self.pkgs.items() if p.repository == repo]:
-            pkg_deps.update(self.collect_dependencies(sibling))
+            self.collect_dependencies(sibling, pkg_deps)
         repos = set([self.pkgs[p].repository for p in pkg_deps]).union([repo])
 
         new_repos = sorted(repos.difference(self.selection))
@@ -195,14 +195,14 @@ class Interface(cmd.Cmd):
         self.columnize(sorted(self.remaining))
         print(f"{len(self.remaining)} repositories remaining")
 
-    def collect_dependencies(self, pkg):
-        deps = set()
-        deps.update([d.name for d in self.pkgs[pkg].pkg['build_depends'] if d.name in self.pkgs])
-        deps.update([d.name for d in self.pkgs[pkg].pkg['exec_depends'] if d.name in self.pkgs])
-        rec_deps = set()
-        for d in deps:
-            rec_deps.update(self.collect_dependencies(d))
-        deps.update(rec_deps)
+    def collect_dependencies(self, pkg, deps):
+        pkg_deps = set()
+        pkg_deps.update([d.name for d in self.pkgs[pkg].pkg['build_depends'] if d.name in self.pkgs])
+        pkg_deps.update([d.name for d in self.pkgs[pkg].pkg['exec_depends'] if d.name in self.pkgs])
+        deps.update(pkg_deps)
+        for d in pkg_deps:
+            if d not in deps:
+                deps.update(self.collect_dependencies(d, deps))
         return deps
 
     def find_all_pkg_in_repository(self, pkg):
