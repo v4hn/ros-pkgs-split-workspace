@@ -210,12 +210,13 @@ class Interface(cmd.Cmd):
         print(f"{len(self.remaining)} repositories remaining")
 
     def collect_inverse_dependencies(self, pkg, ideps):
+        print("open TODO / recursion not functional")
         # TODO: ['build_depends'] and 'exec_deps' are list of Dependency(name=...), so `pkg in ...` consistently fails
         pkg_ideps = set([name for (name,p) in self.pkgs.items() if (pkg in p.pkg['build_depends']) or (pkg in p.pkg['exec_depends'])])
         ideps.update(pkg_ideps)
         for d in pkg_ideps:
             if d not in ideps:
-                self.collect_dependencies(d, deps)
+                self.collect_inverse_dependencies(d, deps)
 
     def collect_dependencies(self, pkg, deps):
         if pkg in deps:
