@@ -45,6 +45,7 @@ class Interface(cmd.Cmd):
         self.last_command = self.Command()
 
         super().__init__(completekey='tab')
+        self.do_list("")
 
     def precmd(self, line):
         if line == 'EOF':
