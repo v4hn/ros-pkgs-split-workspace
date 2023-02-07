@@ -118,12 +118,20 @@ class Interface(cmd.Cmd):
             print(f"{repository} is not selected")
             return
 
-        self.selection.remove(repository)
-        self.remaining.add(repository)
-        print("TODO: drop all downstream dependencies, otherwise state is inconsistent")
+        pkgs = [n for (n,p) in self.pkgs.items() if p.repository == repository]
+        ideps = set()
+        for p in pkgs:
+            print(f"{p}")
+            self.collect_inverse_dependencies(p, ideps)
 
-        self.last_command = self.Command('drop', pkgs=[], repos=[repository])
-        print(f"dropped repository {repository}")
+        repos = set([self.pkgs[p].repository for p in ideps])
+        repos.add(repository)
+
+        self.selection.difference_update(repos)
+        self.remaining.update(repos)
+
+        self.last_command = self.Command('drop', pkgs=[], repos=repos)
+        print(f"dropped {repository} and {len(repos)-1} other inverse dependent repositories")
 
     def do_undo(self, line):
         "Undo last add or drop command"
@@ -197,6 +205,14 @@ class Interface(cmd.Cmd):
         self.columnize(sorted(self.remaining))
         print(f"{len(self.remaining)} repositories remaining")
 
+    def collect_inverse_dependencies(self, pkg, ideps):
+        # TODO: ['build_depends'] and 'exec_deps' are list of Dependency(name=...), so `pkg in ...` consistently fails
+        pkg_ideps = set([name for (name,p) in self.pkgs.items() if (pkg in p.pkg['build_depends']) or (pkg in p.pkg['exec_depends'])])
+        ideps.update(pkg_ideps)
+        for d in pkg_ideps:
+            if d not in ideps:
+                self.collect_dependencies(d, deps)
+
     def collect_dependencies(self, pkg, deps):
         pkg_deps = set()
         pkg_deps.update([d.name for d in self.pkgs[pkg].pkg['build_depends'] if d.name in self.pkgs])
@@ -204,8 +220,7 @@ class Interface(cmd.Cmd):
         deps.update(pkg_deps)
         for d in pkg_deps:
             if d not in deps:
-                deps.update(self.collect_dependencies(d, deps))
-        return deps
+                self.collect_dependencies(d, deps)
 
     def find_all_pkg_in_repository(self, pkg):
         return [n for (n,p) in self.pkgs.items() if p.repository == pkg.repository]
