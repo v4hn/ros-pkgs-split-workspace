@@ -218,13 +218,14 @@ class Interface(cmd.Cmd):
                 self.collect_dependencies(d, deps)
 
     def collect_dependencies(self, pkg, deps):
+        if pkg in deps:
+            return
+        deps.add(pkg)
         pkg_deps = set()
         pkg_deps.update([d.name for d in self.pkgs[pkg].pkg['build_depends'] if d.name in self.pkgs])
         pkg_deps.update([d.name for d in self.pkgs[pkg].pkg['exec_depends'] if d.name in self.pkgs])
-        deps.update(pkg_deps)
         for d in pkg_deps:
-            if d not in deps:
-                self.collect_dependencies(d, deps)
+            self.collect_dependencies(d, deps)
 
     def find_all_pkg_in_repository(self, pkg):
         return [n for (n,p) in self.pkgs.items() if p.repository == pkg.repository]
