@@ -91,7 +91,11 @@ class Interface(cmd.Cmd):
 
     def do_add(self, pkg):
         "Add repository of <package> and all dependencies of the repository to the selection"
-        repo = self.pkgs[pkg].repository
+        try:
+            repo = self.pkgs[pkg].repository
+        except KeyError:
+            print(f"Package '{pkg}' does not exist in workspace")
+            return
         if repo in self.selection:
             print(f"'{repo}' containing package {pkg} was already added")
             return
