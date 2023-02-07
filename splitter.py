@@ -27,11 +27,12 @@ class Interface(cmd.Cmd):
         if ws.endswith('/'):
             ws = ws[:len(ws)-1]
         self.ws = ws
+        cut_prefix = 0 if ws == "." else len(ws)+1
 
         self.Pkg = namedtuple('Pkg', ['path', 'pkg', 'repository'])
 
         # index of all packages in workspace
-        self.pkgs = {pkg['name']: self.Pkg(path, pkg, get_repository(Path(ws)/path)[len(ws)+1:]) for (path, pkg) in catkin_pkg.packages.find_packages(ws).items()}
+        self.pkgs = {pkg['name']: self.Pkg(path, pkg, get_repository(Path(ws)/path)[cut_prefix:]) for (path, pkg) in catkin_pkg.packages.find_packages(ws).items()}
 
         # list of unselected repository names
         self.remaining = set([p.repository for p in self.pkgs.values()])
@@ -210,7 +211,4 @@ class Interface(cmd.Cmd):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print("usage: splitter.py <path to workspace>")
-        sys.exit(1)
-    Interface(sys.argv[1]).cmdloop()
+    Interface(sys.argv[1] if len(sys.argv) > 1 else ".").cmdloop()
