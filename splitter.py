@@ -151,7 +151,7 @@ class Interface(cmd.Cmd):
             self.selection.update(self.last_command.repos)
             print(f"added {len(self.last_command.repos)} repositories to selection again.")
         else:
-            print(f"TODO: undo does not support '{self.last_command.name}'. Ignoring command.")
+            print(f"undo does not support '{self.last_command.name}'. Ignoring command.")
             return
         self.last_command = self.Command()
 
@@ -164,7 +164,6 @@ class Interface(cmd.Cmd):
         self.columnize(sorted(list(self.selection)))
         print(f"{len(self.selection)} repositories selected")
 
-    # TODO: forget repositories in selection
     # TODO: allow selection of explicitly parallel groups
 
     def do_export(self, line):
@@ -199,6 +198,13 @@ class Interface(cmd.Cmd):
                     f"    version: {version}\n"
                 )
             print(f"wrote selection to file {line}.repos")
+
+    def do_drop_selection(self, line):
+        "drop current selection from list. TODO: Currently irreversible"
+        print(f"forgetting {len(self.selection)} repositories (and all contained packages)")
+        self.pkgs = {n:p for (n,p) in self.pkgs.items() if p.repository not in self.selection}
+        self.selection = set()
+        self.last_command = self.Command()
 
     def do_remaining(self, line):
         "print information on all unselected repositories/packages"
