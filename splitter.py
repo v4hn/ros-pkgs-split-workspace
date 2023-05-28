@@ -81,6 +81,29 @@ class Interface(cmd.Cmd):
         self.columnize(list(set(siblings).difference([pkg_name])))
         print()
 
+    def complete_rdeps(self, text, line, begidx, endidx):
+        return [p for p in self.pkgs if p.startswith(text)]
+
+    def do_rdeps(self, pkg_name):
+        "List reverse dependencies of package"
+        if pkg_name not in self.pkgs:
+            print(f"package '{pkg_name}' is not known")
+            return
+
+        pkg = self.pkgs[pkg_name]
+
+        print("reverse dependencies\n"
+              "--------------------")
+
+        rdeps = set()
+        self.collect_reverse_dependencies(pkg_name, rdeps)
+        self.columnize(list(rdeps))
+        print()
+
+    def do_ls(self, line):
+        "Alias for `list`"
+        self.do_list(line)
+
     def do_list(self, line):
         "List all packages in the workspace"
         self.columnize(self.pkgs.keys())
@@ -117,25 +140,24 @@ class Interface(cmd.Cmd):
         return [p for p in self.selection if p.startswith(text)]
 
     def do_drop(self, repository):
-        "Drop <repository> and all inverse dependencies from the selection"
+        "Drop <repository> and all reverse dependencies from the selection"
         if repository not in self.selection:
             print(f"{repository} is not selected")
             return
 
         pkgs = [n for (n,p) in self.pkgs.items() if p.repository == repository]
-        ideps = set()
+        rdeps = set()
         for p in pkgs:
-            print(f"{p}")
-            self.collect_inverse_dependencies(p, ideps)
-
-        repos = set([self.pkgs[p].repository for p in ideps])
+            self.collect_reverse_dependencies(p, rdeps)
+        repos = set(self.pkgs[p].repository for p in rdeps)
         repos.add(repository)
+        repos_to_drop = repos.intersection(self.selection)
 
-        self.selection.difference_update(repos)
-        self.remaining.update(repos)
+        self.selection.difference_update(repos_to_drop)
+        self.remaining.update(repos_to_drop)
 
-        self.last_command = self.Command('drop', pkgs=[], repos=repos)
-        print(f"dropped {repository} and {len(repos)-1} other inverse dependent repositories")
+        self.last_command = self.Command('drop', pkgs=[], repos=repos_to_drop)
+        print(f"dropped {repository} and {len(repos_to_drop)-1} other reverse dependent repositories")
 
     def do_undo(self, line):
         "Undo last add or drop command"
@@ -215,14 +237,16 @@ class Interface(cmd.Cmd):
         self.columnize(sorted(self.remaining))
         print(f"{len(self.remaining)} repositories remaining")
 
-    def collect_inverse_dependencies(self, pkg, ideps):
-        print("open TODO / recursion not functional")
-        # TODO: ['build_depends'] and 'exec_deps' are list of Dependency(name=...), so `pkg in ...` consistently fails
-        pkg_ideps = set([name for (name,p) in self.pkgs.items() if (pkg in p.pkg['build_depends']) or (pkg in p.pkg['exec_depends'])])
-        ideps.update(pkg_ideps)
-        for d in pkg_ideps:
-            if d not in ideps:
-                self.collect_inverse_dependencies(d, deps)
+    def collect_reverse_dependencies(self, pkg, rdeps):
+        pkg_rdeps = set(
+                name for (name,p) in self.pkgs.items()
+                if (pkg in (d.name for d in p.pkg['build_depends']))
+                or (pkg in (d.name for d in p.pkg['exec_depends']))
+                )
+        for d in pkg_rdeps:
+            if d not in rdeps:
+                rdeps.add(d)
+                self.collect_reverse_dependencies(d, rdeps)
 
     def collect_dependencies(self, pkg, deps):
         if pkg in deps:
