@@ -34,9 +34,10 @@ class Interface(cmd.Cmd):
         # index of all packages in workspace
         self.pkgs = {pkg['name']: self.Pkg(path, pkg, get_repository(Path(ws)/path)[cut_prefix:]) for (path, pkg) in catkin_pkg.packages.find_packages(ws).items()}
 
+        # index of all repositories in workspace
+        self.repositories = set([p.repository for p in self.pkgs.values()])
         # list of unselected repository names
-        self.remaining = set([p.repository for p in self.pkgs.values()])
-
+        self.remaining = self.repositories.copy()
         # selected repository names
         self.selection = set()
 
@@ -100,14 +101,27 @@ class Interface(cmd.Cmd):
         self.columnize(list(rdeps))
         print()
 
+    def complete_ls(self, text, line, begidx, endidx):
+        return self.complete_list(text, line, begidx, endidx)
+
     def do_ls(self, line):
         "Alias for `list`"
         self.do_list(line)
 
+    def complete_list(self, text, line, begidx, endidx):
+        return [t for t in ("packages", "repositories") if t.startswith(text)]
+
     def do_list(self, line):
-        "List all packages in the workspace"
-        self.columnize(self.pkgs.keys())
-        print(f'{len(self.pkgs)} packages in workspace')
+        """
+        `list <p,r>` List all packages or repositories in the workspace
+        Defaults to list packages
+        """
+        if line.startswith('r'):
+            self.columnize(self.repositories)
+            print(f'{len(self.repositories)} repositories in workspace')
+        else:
+            self.columnize(self.pkgs.keys())
+            print(f'{len(self.pkgs)} packages in workspace')
 
     def complete_add(self, text, line, begidx, endidx):
         return [p for p in self.pkgs.keys() if p.startswith(text) and self.pkgs[p].repository in self.remaining]
