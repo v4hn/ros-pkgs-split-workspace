@@ -263,4 +263,14 @@ class Interface(cmd.Cmd):
 
 
 if __name__ == '__main__':
-    Interface(sys.argv[1] if len(sys.argv) > 1 else ".").cmdloop()
+    interface = Interface(sys.argv[1] if len(sys.argv) > 1 else ".")
+    while True:
+        try:
+            interface.cmdloop()
+            break
+        except KeyboardInterrupt:
+            print("^C")
+            continue
+        except EOFError:
+            print("^D")
+            break
