@@ -7,12 +7,33 @@ import os
 import subprocess
 import cmd
 from collections import namedtuple
+from copy import deepcopy
 from pathlib import Path
+from typing import Dict, Set, List
 
 def get_repository(path):
+    '''
+    returns path to root of git repository containing path
+    '''
     while not (path / '.git').is_dir():
         path = path.parent
     return path.as_posix()
+
+def get_git_info(path):
+    def call(cmd):
+        return subprocess.run(
+            cmd.split(" "),
+            stdout=subprocess.PIPE,
+            cwd=path,
+            text=True
+            ).stdout.strip()
+    version = call('git symbolic-ref --short HEAD')
+    long_ref = call('git symbolic-ref -q HEAD')
+    remote = call(f'git for-each-ref --format=%(upstream:remotename) {long_ref}')
+    url = call(f'git remote get-url {remote}')
+    if not remote:
+        print(f"ERROR: no remote found for {path}")
+    return url, version
 
 class Interface(cmd.Cmd):
     intro = ''
@@ -29,34 +50,105 @@ class Interface(cmd.Cmd):
         self.ws = ws
         cut_prefix = 0 if ws == "." else len(ws)+1
 
-        self.Pkg = namedtuple('Pkg', ['path', 'pkg', 'repository'])
-
         # index of all packages in workspace
-        self.pkgs = {pkg['name']: self.Pkg(path, pkg, get_repository(Path(ws)/path)[cut_prefix:]) for (path, pkg) in catkin_pkg.packages.find_packages(ws).items()}
+        self.Pkg = namedtuple('Pkg', ['path', 'pkg', 'repository'])
+        self.pkgs = {
+            pkg['name']: self.Pkg(path, pkg, get_repository(Path(ws)/path)[cut_prefix:])
+            for (path, pkg) in catkin_pkg.packages.find_packages(ws).items()
+        }
 
         # index of all repositories in workspace
-        self.repositories = set([p.repository for p in self.pkgs.values()])
-        # list of unselected repository names
-        self.remaining = self.repositories.copy()
-        # selected repository names
-        self.selection = set()
+        self.Repository = namedtuple('Repository', ['name', 'path', 'packages', 'build_depends', 'exec_depends'])
+        self.repos= {}
+        repository_names = set([p.repository for p in self.pkgs.values()])
+        for name in repository_names:
+            pkgs = [p for p in self.pkgs.values() if p.repository == name]
+            self.repos[name] = self.Repository(
+                name,
+                get_repository(Path(pkgs[0].path)),
+                [pkg for pkg in self.pkgs.values() if pkg.repository == name],
+                set([self.pkgs[d.name].repository for pkg in pkgs for d in pkg.pkg['build_depends'] if d.name in self.pkgs]).difference([name]),
+                set([self.pkgs[d.name].repository for pkg in pkgs for d in pkg.pkg['exec_depends'] if d.name in self.pkgs]).difference([name])
+                )
 
-        # keep last action around to support undo
-        self.Command = namedtuple('Command', ['name', 'pkgs', 'repos'], defaults=["", [], []])
-        self.last_command = self.Command()
+        # map of build groups (multiple repositories build together)
+        self.groups = {'loose': repository_names}
+        # TODO: read them from *.repos in the folder
+
+        # keep history around to support undo
+        self.Frame = namedtuple('Frame', ['command', 'groups'])
+        self.history = []
 
         super().__init__(completekey='tab')
         self.do_list("")
+
+    def push_frame(self, cmd):
+        '''
+        push group state to history stack / has to be called *before* applying modification
+        '''
+        self.history.append(self.Frame(cmd, deepcopy(self.groups)))
+
+    def do_undo(self, line):
+        if len(self.history) == 0:
+            print ("nothing to undo")
+            return
+
+        print(f"undoing `{self.history[-1].command}`")
+        self.groups = self.history[-1].groups
+        self.history.pop()
+
+    def do_hist(self, line):
+        for i,frame in enumerate(self.history[::-1]):
+            print(f"({i:02}) {frame.command}")
 
     def precmd(self, line):
         if line == 'EOF':
             sys.exit(0)
         return line
 
-    def complete_inspect(self, text, line, begidx, endidx):
+    def complete_ls(self, text, line, begidx, endidx):
+        return self.complete_list(text, line, begidx, endidx)
+
+    def do_ls(self, line):
+        "Alias for `list`"
+        self.do_list(line)
+
+    def complete_list(self, text, line, begidx, endidx):
+        return [g for g in self.groups.keys() if g.startswith(text)]
+
+    def do_list(self, line):
+        """
+        `list [group]` List all repositories in the workspace/target group
+        """
+
+        if line == '':
+            groups = self.groups.keys()
+        else:
+            if line not in self.groups:
+                print(f"group '{line}' does not exist")
+                return
+            groups = [line]
+
+        for g in groups:
+            print(f"group {g}:\n")
+            print(f'{len(self.groups[g])} repositories:')
+            self.columnize(self.groups[g])
+            pkgs = set([p.pkg['name'] for p in self.pkgs.values() if p.repository in self.groups[g]])
+            print(f'\n{len(pkgs)} packages:')
+            self.columnize(pkgs)
+            print()
+
+    def do_groups(self, line):
+        '''
+        list all groups with statistics
+        '''
+        for g in self.groups:
+            print(f"{g}: {len(self.groups[g])} repositories / {len([p for r in self.groups[g] for p in self.repos[r].packages])} packages")
+
+    def complete_pkg(self, text, line, begidx, endidx):
         return [p for p in self.pkgs if p.startswith(text)]
 
-    def do_inspect(self, pkg_name):
+    def do_pkg(self, pkg_name):
         "Inspect a package showing its dependencies and repository"
         if pkg_name not in self.pkgs:
             print(f"package '{pkg_name}' is not known")
@@ -82,199 +174,189 @@ class Interface(cmd.Cmd):
         self.columnize(list(set(siblings).difference([pkg_name])))
         print()
 
-    def complete_rdeps(self, text, line, begidx, endidx):
-        return [p for p in self.pkgs if p.startswith(text)]
+    def complete_repo(self, text, line, begidx, endidx):
+        return [r for r in self.repos if r.startswith(text)]
 
-    def do_rdeps(self, pkg_name):
-        "List reverse dependencies of package"
-        if pkg_name not in self.pkgs:
-            print(f"package '{pkg_name}' is not known")
+    def do_repo(self, repo_name):
+        '''
+        Inspect a repository showing its packages and dependencies
+        '''
+        if repo_name not in self.repos:
+            print(f"repository '{repo_name}' is not known")
             return
 
-        pkg = self.pkgs[pkg_name]
+        repo = self.repos[repo_name]
 
-        print("reverse dependencies\n"
-              "--------------------")
+        print("group\n"
+              "-----")
+        print(next(g for g in self.groups if repo_name in self.groups[g]))
 
-        rdeps = set()
-        self.collect_reverse_dependencies(pkg_name, rdeps)
-        self.columnize(list(rdeps))
+        print("\npackages\n"
+              "--------")
+        self.columnize([p.pkg['name'] for p in repo.packages])
         print()
 
-    def complete_ls(self, text, line, begidx, endidx):
-        return self.complete_list(text, line, begidx, endidx)
+        print("build_depend repositories\n"
+                "------------------")
+        self.columnize(repo.build_depends)
+        print("\nexec_depend repositories\n"
+                "-----------------")
+        self.columnize(repo.exec_depends)
 
-    def do_ls(self, line):
+        print("\ndirect rdeps\n"
+                "------------")
+        rdeps = [r for r in self.repos if repo_name in self.repos[r].build_depends.union(self.repos[r].exec_depends)]
+        self.columnize(rdeps)
+
+    def complete_group(self, text, line, begidx, endidx):
+        return [g for g in self.groups if g.startswith(text)]
+
+    def do_group(self, group):
+        '''
+        Inspect group
+        '''
+
+        if group not in self.groups:
+            print(f"group '{group}' is not known")
+            return
+
+        print("repositories of group\n"
+              "---------------------")
+
+        self.columnize(self.groups[group])
+
+        repo_deps = [(dep, repo) for repo in self.groups[group] for dep in self.repos[repo].build_depends.union(self.repos[repo].exec_depends)]
+        group_deps = {g : (dep, repo) for g in self.groups if g != group for repo,dep in repo_deps if repo in self.groups[g]}
+        print("\ndependencies\n"
+              "------------")
+
+        for d in set(group_deps):
+            print(f"{d} (e.g., {group_deps[d][0]} depends on {group_deps[d][1]})")
+
+    def do_create(self, group):
+        '''
+        create a new group
+        '''
+        if group in self.groups:
+            print(f"group '{group}' already exists")
+            return
+
+        self.push_frame(f"create {group}")
+
+        self.groups[group] = set()
+        print(f"Created group '{group}'")
+
+    def complete_remove(self, text, line, begidx, endidx):
+        return [g for g in self.groups if g.startswith(text) and g != 'loose']
+
+    def do_remove(self, group):
+        '''
+        remove a group
+        '''
+        if group not in self.groups:
+            print(f"group '{group}' does not exist")
+
+        self.groups['loose'].update(self.groups[group])
+        del self.groups[group]
+        print(f"group '{group}' removed (repositories loose again)")
+
+    def complete_rename(self, text, line, begidx, endidx):
+        return self.complete_group(text, line, begidx, endidx)
+
+    def do_rename(self, line):
+        '''
+        rename a group
+        '''
+
+        old, new = line.split(" ")
+
+        if old not in self.groups:
+            print(f"group '{old}' does not exist")
+            return
+
+        self.push_frame(f"rename {old} {new}")
+
+        self.groups[new] = self.groups[old]
+        del self.groups[old]
+        print(f"group '{old}' renamed to '{new}'")
+
+    def complete_mv(self, text, line, begidx, endidx):
+        return self.complete_move(text, line, begidx, endidx)
+
+    def do_mv(self, line):
         "Alias for `list`"
-        self.do_list(line)
+        self.do_move(line)
 
-    def complete_list(self, text, line, begidx, endidx):
-        return [t for t in ("packages", "repositories") if t.startswith(text)]
-
-    def do_list(self, line):
-        """
-        `list <p,r>` List all packages or repositories in the workspace
-        Defaults to list packages
-        """
-        if line.startswith('r'):
-            self.columnize(self.repositories)
-            print(f'{len(self.repositories)} repositories in workspace')
+    def complete_move(self, text, line, begidx, endidx):
+        if len(line.split(" ")) == 2:
+            return self.complete_repo(text, line, begidx, endidx)
         else:
-            self.columnize(self.pkgs.keys())
-            print(f'{len(self.pkgs)} packages in workspace')
+            return self.complete_group(text, line, begidx, endidx)
 
-    def complete_add(self, text, line, begidx, endidx):
-        return [p for p in self.pkgs.keys() if p.startswith(text) and self.pkgs[p].repository in self.remaining]
+    def do_move(self, line):
+        '''
+        `move <repo> <group>` to move a repository from anywhere to <group>
+        Maintain dependency hierarchy - possibly moving other packages along
+        '''
+        repo, new_group = line.split(" ")
 
-    def do_add(self, pkg):
-        "Add repository of <package> and all dependencies of the repository to the selection"
-        try:
-            repo = self.pkgs[pkg].repository
-        except KeyError:
-            print(f"Package '{pkg}' does not exist in workspace")
-            return
-        if repo in self.selection:
-            print(f"'{repo}' containing package {pkg} was already added")
+        if new_group not in self.groups:
+            print(f"group '{new_group}' is not known")
             return
 
-        pkg_deps = set()
-        for sibling in [n for (n, p) in self.pkgs.items() if p.repository == repo]:
-            self.collect_dependencies(sibling, pkg_deps)
-        repos = set([self.pkgs[p].repository for p in pkg_deps]).union([repo])
-
-        new_repos = sorted(repos.difference(self.selection))
-        self.selection.update(new_repos)
-        self.remaining.difference_update(new_repos)
-
-        self.last_command = self.Command('add', pkgs= [], repos = new_repos)
-        self.columnize(new_repos)
-        print(f"added {len(new_repos)} repositories to selection")
-
-    def complete_drop(self, text, line, begidx, endidx):
-        return [p for p in self.selection if p.startswith(text)]
-
-    def do_drop(self, repository):
-        "Drop <repository> and all reverse dependencies from the selection"
-        if repository not in self.selection:
-            print(f"{repository} is not selected")
+        if repo not in self.repos:
+            print(f"repository '{repo}' is not known")
             return
 
-        pkgs = [n for (n,p) in self.pkgs.items() if p.repository == repository]
-        rdeps = set()
-        for p in pkgs:
-            self.collect_reverse_dependencies(p, rdeps)
-        repos = set(self.pkgs[p].repository for p in rdeps)
-        repos.add(repository)
-        repos_to_drop = repos.intersection(self.selection)
-
-        self.selection.difference_update(repos_to_drop)
-        self.remaining.update(repos_to_drop)
-
-        self.last_command = self.Command('drop', pkgs=[], repos=repos_to_drop)
-        print(f"dropped {repository} and {len(repos_to_drop)-1} other reverse dependent repositories")
-
-    def do_undo(self, line):
-        "Undo last add or drop command"
-        if self.last_command.name == '':
-            print(f"there is no command to undo")
-        print(f"undo {self.last_command.name}: ", end='')
-        if self.last_command.name == 'add':
-            self.selection = self.selection.difference(self.last_command.repos)
-            self.remaining.update(self.last_command.repos)
-            print(f"removed {len(self.last_command.repos)} repositories from selection again.")
-        elif self.last_command.name == 'drop':
-            self.remaining = self.remaining.difference(self.last_command.repos)
-            self.selection.update(self.last_command.repos)
-            print(f"added {len(self.last_command.repos)} repositories to selection again.")
-        else:
-            print(f"undo does not support '{self.last_command.name}'. Ignoring command.")
+        if repo in self.groups[new_group]:
+            print(f"repository '{repo}' already in group '{new_group}'")
             return
-        self.last_command = self.Command()
 
-    def do_selection(self, line):
-        "print information on current selection"
-        selected_pkgs = [n for (n, p) in self.pkgs.items() if p.repository in self.selection]
-        self.columnize(sorted(selected_pkgs))
-        print(f"{len(selected_pkgs)} packages selected\n")
+        self.push_frame(f"move {repo} {new_group}")
 
-        self.columnize(sorted(list(self.selection)))
-        print(f"{len(self.selection)} repositories selected")
+        old_group = next(g for g in self.groups if repo in self.groups[g])
 
-    # TODO: allow selection of explicitly parallel groups
+        if old_group == 'loose':
+            repos = [repo]
+            rdeps = [r for r in self.repos if repo in self.repos[r].build_depends.union(self.repos[r].exec_depends)]
+            for r in rdeps:
+                self.groups[new_group].add(r)
+
+
+
+        self.groups[old_group].remove(repo)
+        self.groups[new_group].add(repo)
+
+        print(f"moved {repo} to {new_group}")
 
     def do_export(self, line):
-        "export selection to <argument>.repos file"
-        with open(f'{line}.repos', 'w') as file:
-            file.write("repositories:\n")
-            ws= Path(self.ws)
-            for repository in self.selection:
-                version = subprocess.run(
-                    ['git', 'symbolic-ref', '--short', 'HEAD'],
-                    stdout=subprocess.PIPE,
-                    cwd=ws/repository,
-                    text=True,
-                    ).stdout.strip()
-                remote = subprocess.run(
-                    'git for-each-ref --format="%(upstream:remotename)" "$(git symbolic-ref -q HEAD)"',
-                    shell=True,
-                    stdout=subprocess.PIPE,
-                    cwd=ws/repository,
-                    text=True,
-                    ).stdout.strip()
-                url = subprocess.run(
-                    ['git', 'remote', 'get-url', remote],
-                    stdout=subprocess.PIPE,
-                    cwd=ws/repository,
-                    text=True
-                    ).stdout.strip()
-                file.write(
-                    f"  {repository}:\n"
-                    f"    type: git\n"
-                    f"    url: {url}\n"
-                    f"    version: {version}\n"
-                )
-            print(f"wrote selection to file {line}.repos")
+        '''
+        export groups to .repos files
+        '''
+        for group in self.groups:
+            with open(f'{group}.repos', 'w') as file:
+                file.write("repositories:\n")
+                ws= Path(self.ws)
+                for repository in self.groups[group]:
+                    url, version = get_git_info(ws/repository)
+                    file.write(
+                        f"  {repository}:\n"
+                        f"    type: git\n"
+                        f"    url: {url}\n"
+                        f"    version: {version}\n"
+                    )
+                print(f"wrote selection to file {group}.repos")
 
-    def do_drop_selection(self, line):
-        "drop current selection from list. TODO: Currently irreversible"
-        print(f"forgetting {len(self.selection)} repositories (and all contained packages)")
-        self.pkgs = {n:p for (n,p) in self.pkgs.items() if p.repository not in self.selection}
-        self.selection = set()
-        self.last_command = self.Command()
-
-    def do_remaining(self, line):
-        "print information on all unselected repositories/packages"
-        remaining_pkgs = [n for (n, p) in self.pkgs.items() if p.repository in self.remaining]
-        self.columnize(sorted(remaining_pkgs))
-        print(f"{len(remaining_pkgs)} packages remaining\n")
-
-        self.columnize(sorted(self.remaining))
-        print(f"{len(self.remaining)} repositories remaining")
-
-    def collect_reverse_dependencies(self, pkg, rdeps):
-        pkg_rdeps = set(
-                name for (name,p) in self.pkgs.items()
-                if (pkg in (d.name for d in p.pkg['build_depends']))
-                or (pkg in (d.name for d in p.pkg['exec_depends']))
-                )
-        for d in pkg_rdeps:
-            if d not in rdeps:
-                rdeps.add(d)
-                self.collect_reverse_dependencies(d, rdeps)
-
-    def collect_dependencies(self, pkg, deps):
-        if pkg in deps:
-            return
-        deps.add(pkg)
-        pkg_deps = set()
-        pkg_deps.update([d.name for d in self.pkgs[pkg].pkg['build_depends'] if d.name in self.pkgs])
-        pkg_deps.update([d.name for d in self.pkgs[pkg].pkg['exec_depends'] if d.name in self.pkgs])
-        for d in pkg_deps:
-            self.collect_dependencies(d, deps)
+        with open('repos_dependencies.txt', 'w') as file:
+            for group in self.groups:
+                repo_deps = [dep for repo in self.groups[group] for dep in self.repos[repo].build_depends.union(self.repos[repo].exec_depends)]
+                group_deps = {g for g in self.groups if g != group for repo in repo_deps if repo in self.groups[g]}
+                for d in group_deps:
+                    file.write(f"{d} (e.g., {group_deps[d][0]} depends on {group_deps[d][1]})\n")
+        print("wrote dependencies to repos_dependencies.txt")
 
     def find_all_pkg_in_repository(self, pkg):
         return [n for (n,p) in self.pkgs.items() if p.repository == pkg.repository]
-
 
 if __name__ == '__main__':
     interface = Interface(sys.argv[1] if len(sys.argv) > 1 else ".")
