@@ -9,8 +9,12 @@ import sys
 def stages(ws):
     ws = deepcopy(ws)
     while ws.repositories:
-        # find all repository without dependencies
-        stage = [r for r in ws.repositories.values() if not r.build_depends]
+        if "setup_files" in ws.repositories or "ros_environment" in ws.repositories:
+            # these two are special because they are needed for the build environment
+            stage = [ws.repositories["setup_files"], ws.repositories["ros_environment"]]
+        else:
+            # find all repository without dependencies
+            stage = [r for r in ws.repositories.values() if not r.build_depends]
 
         if not stage:
             print("ERROR: cyclic dependencies detected. Remaining repositories:\n", ", ".join([r.name for r in ws.repositories]))
