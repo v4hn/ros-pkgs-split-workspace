@@ -316,18 +316,10 @@ class Interface(cmd.Cmd):
 
         old_group = next(g for g in self.groups if repo in self.groups[g])
 
-        if old_group == 'loose':
-            repos = [repo]
-            rdeps = [r for r in self.repos if repo in self.repos[r].build_depends.union(self.repos[r].exec_depends)]
-            for r in rdeps:
-                self.groups[new_group].add(r)
-
-
-
         self.groups[old_group].remove(repo)
         self.groups[new_group].add(repo)
 
-        print(f"moved {repo} to {new_group}")
+        print(f"moved {repo} from {old_group} to {new_group}")
 
     def do_export(self, line):
         '''
@@ -349,10 +341,11 @@ class Interface(cmd.Cmd):
 
         with open('repos_dependencies.txt', 'w') as file:
             for group in self.groups:
-                repo_deps = [dep for repo in self.groups[group] for dep in self.repos[repo].build_depends.union(self.repos[repo].exec_depends)]
-                group_deps = {g for g in self.groups if g != group for repo in repo_deps if repo in self.groups[g]}
-                for d in group_deps:
-                    file.write(f"{d} (e.g., {group_deps[d][0]} depends on {group_deps[d][1]})\n")
+                repo_deps = [(repo_dep, repo_group) for repo_group in self.groups[group] for repo_dep in self.repos[repo_group].build_depends.union(self.repos[repo_group].exec_depends)]
+                group_deps = {group_dep: (repo_dep, repo_group) for group_dep in self.groups if group_dep != group for (repo_dep, repo_group) in repo_deps if repo_dep in self.groups[group_dep]}
+                for group_dep in group_deps.keys():
+                    repo_dep, repo_group = group_deps[group_dep]
+                    file.write(f"{group} depends on {group_dep} (e.g., {repo_group} depends on {repo_dep}))\n")
         print("wrote dependencies to repos_dependencies.txt")
 
     def find_all_pkg_in_repository(self, pkg):
