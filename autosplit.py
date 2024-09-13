@@ -25,13 +25,13 @@ def stages(ws):
         else:
             # find all repositories without build dependencies
             stage = [r for r in ws.repositories.values()
-                     if not r.build_depends and not r.test_depends
-                     and (not r.bonded or not any(ws.repositories[br].build_depends.union(ws.repositories[br].test_depends) for br in r.bonded))]
+                     if not r.build_depends and not r.test_depends and not r.exec_depends
+                     and (not r.bonded or not any(ws.repositories[br].build_depends.union(ws.repositories[br].test_depends, ws.repositories[br].exec_depends) for br in r.bonded))]
 
         if not stage:
             print("ERROR: unbonded cyclic dependencies detected. Remaining repositories:", file=sys.stderr)
             for r in ws.repositories.values():
-                print(f"{r.name}: {r.build_depends} / {r.test_depends}", file=sys.stderr)
+                print(f"{r.name}: {r.build_depends} / {r.test_depends} / {r.exec_depends}", file=sys.stderr)
             return
 
         yield stage

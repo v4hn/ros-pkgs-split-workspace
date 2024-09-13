@@ -119,20 +119,20 @@ class Workspace:
                     if cyc_repo_bonds:
                         bonded.update(cyc_repo_bonds)
 
-                for cyc_repo in cycle:
+                for cyc_repo in bonded:
                     self._repos[cyc_repo].bonded = bonded
 
                 # drop the cyclic dependencies in build and test dependencies
-                for cyc_repo in cycle:
-                    self._repos[cyc_repo].build_depends.difference_update(cycle)
-                    self._repos[cyc_repo].exec_depends.difference_update(cycle)
-                    self._repos[cyc_repo].test_depends.difference_update(cycle)
+                for cyc_repo in bonded:
+                    self._repos[cyc_repo].build_depends.difference_update(bonded)
+                    self._repos[cyc_repo].exec_depends.difference_update(bonded)
+                    self._repos[cyc_repo].test_depends.difference_update(bonded)
 
     def detect_cycle(self, rep, visited= None):
         if visited is None:
             visited = []
         visited.append(rep.name)
-        deps = rep.build_depends.union(rep.test_depends)
+        deps = rep.build_depends.union(rep.test_depends, rep.exec_depends)
         for d in deps:
             try:
                 i = visited.index(d)
