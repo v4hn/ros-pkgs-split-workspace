@@ -8,6 +8,7 @@ import subprocess
 import cmd
 from collections import namedtuple
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Set, List, NamedTuple
 
@@ -38,7 +39,8 @@ def get_git_info(path):
         print(f"ERROR: no remote found for {path}")
     return url, version
 
-class Package(NamedTuple):
+@dataclass
+class Package:#(NamedTuple):
     name: str
     path: str
     repository: str
@@ -47,14 +49,21 @@ class Package(NamedTuple):
     exec_depends: Set[str]
     test_depends: Set[str]
 
-class Repository(NamedTuple):
+@dataclass
+class Repository:#(NamedTuple):
     name: str
     path: str
     packages: Set[Package]
+
     # these are repositories
     build_depends: Set[str]
     exec_depends: Set[str]
     test_depends: Set[str]
+
+    # these are repositories with cyclic build/test dependencies
+    # such dependencies are not allowed by ROS on the package graph, but can arise in the repository groups
+    # THEY ARE EXPLICITLY EXCLUDED ABOVE
+    bonded: Set[str] = None
 
 class Workspace:
     @property
@@ -97,6 +106,49 @@ class Workspace:
                 exec_depends=set([self._pkgs[d].repository for pkg in pkgs for d in pkg.exec_depends if d in self._pkgs]).difference([name]),
                 test_depends=set([self._pkgs[d].repository for pkg in pkgs for d in pkg.test_depends if d in self._pkgs]).difference([name]),
                 )
+
+        # find cyclic build/test dependencies
+        for repo in self._repos.values():
+            while True:
+                cycle = self.detect_cycle(repo)
+                if not cycle:
+                    break
+                bonded = set(cycle)
+                for cyc_repo in cycle:
+                    cyc_repo_bonds = self._repos[cyc_repo].bonded
+                    if cyc_repo_bonds:
+                        bonded.update(cyc_repo_bonds)
+
+                for cyc_repo in cycle:
+                    self._repos[cyc_repo].bonded = bonded
+
+                # drop the cyclic dependencies in build and test dependencies
+                for cyc_repo in cycle:
+                    self._repos[cyc_repo].build_depends.difference_update(cycle)
+                    self._repos[cyc_repo].exec_depends.difference_update(cycle)
+                    self._repos[cyc_repo].test_depends.difference_update(cycle)
+
+    def detect_cycle(self, rep, visited= None):
+        if visited is None:
+            visited = []
+        visited.append(rep.name)
+        deps = rep.build_depends.union(rep.test_depends)
+        for d in deps:
+            try:
+                i = visited.index(d)
+                # cycle found
+                return set(visited[i:])
+            except ValueError:
+                pass
+            if d in self._repos:
+                cycle = self.detect_cycle(self._repos[d], visited)
+                if cycle:
+                    return cycle
+        visited.pop()
+        return set()
+
+
+
 
     def drop_repository(self, repository):
         for p in self._repos[repository].packages:

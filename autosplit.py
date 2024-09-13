@@ -23,11 +23,14 @@ def stages(ws):
             stage = [ws.repositories["setup_files"], ws.repositories["ros_environment"]]
         else:
             # find all repositories without build dependencies
-            stage = [r for r in ws.repositories.values() if not r.build_depends]
+            stage = [r for r in ws.repositories.values()
+                     if not r.build_depends and not r.test_depends
+                     and (not r.bonded or not any(ws.repositories[br].build_depends.union(ws.repositories[br].test_depends) for br in r.bonded))]
 
-        # TODO: deal with cycles by merging them into the same job
         if not stage:
-            print("ERROR: cyclic dependencies detected. Remaining repositories:\n", ", ".join([r for r in ws.repositories]), file=sys.stderr)
+            print("ERROR: unbonded cyclic dependencies detected. Remaining repositories:", file=sys.stderr)
+            for r in ws.repositories.values():
+                print(f"{r.name}: {r.build_depends} / {r.test_depends}", file=sys.stderr)
             return
 
         yield stage
@@ -46,9 +49,23 @@ if __name__ == '__main__':
 
     for i, (stage, workers) in enumerate(zip(stages(ws), nr_of_workers())):
         extra_jobs = [[repo.name] for repo in stage if repo.name in SBUILD_OPTIONS]
-        costs = {repo.name:len(repo.packages) for repo in stage if repo.name not in SBUILD_OPTIONS}
+        repos = [repo for repo in stage if repo.name not in SBUILD_OPTIONS]
+
+        tasks = dict()
+        while repos:
+            repo = repos[0]
+            tasks[repo.name] = [repo]
+            if repo.bonded:
+                tasks[repo.name] = [ws.repositories[br] for br in repo.bonded]
+            for r in tasks[repo.name]:
+                repos.pop(next(i for i, rr in enumerate(repos) if rr.name == r.name))
+
+        costs = {t : sum(len(r.packages) for r in tasks[t]) for t in tasks}
         jobs = binpacking.to_constant_bin_number(costs, workers-len(extra_jobs))
-        jobs = [list(j.keys()) for j in jobs if j] # skip empty jobs
+        jobs = [j for j in jobs if j] # skip empty jobs
+
+        jobs = [[repo.name for task in job for repo in tasks[task]] for job in jobs]
+
         # TODO: reduce jobs by merging them to fill current maximum cost of any job
 
         for ji, job in enumerate(jobs+extra_jobs):
