@@ -11,7 +11,8 @@ import sys
 SBUILD_OPTIONS = {
     # limit to fewer jobs as free github runners run out of memory with defaults (determined by trial and error)
     "eigenpy": "$dpkg_buildpackage_user_options = ['--jobs=3'];",
-    # entails this will run in an isolated job as it's the stage bottleneck
+    # TODO: record the actual compute time of stages and use it to weight the binpacking,
+    # This hack here entails this will run in an isolated job as it's the stage1 bottleneck
     "ompl": "",
 }
 
