@@ -45,6 +45,7 @@ class Package(NamedTuple):
     # these are packages
     build_depends: Set[str]
     exec_depends: Set[str]
+    test_depends: Set[str]
 
 class Repository(NamedTuple):
     name: str
@@ -53,6 +54,7 @@ class Repository(NamedTuple):
     # these are repositories
     build_depends: Set[str]
     exec_depends: Set[str]
+    test_depends: Set[str]
 
 class Workspace:
     @property
@@ -76,7 +78,9 @@ class Workspace:
                 path=path,
                 repository=get_repository(self.ws/path)[self.cut_prefix:],
                 build_depends=set([d.name for d in catpkg['build_depends']]),
-                exec_depends=set([d.name for d in catpkg['exec_depends']]))
+                exec_depends=set([d.name for d in catpkg['exec_depends']]),
+                test_depends=set([d.name for d in catpkg['test_depends']]),
+                )
             for (path, catpkg) in catkin_pkg.packages.find_packages(ws).items()
         }
 
@@ -90,8 +94,25 @@ class Workspace:
                 path=repository_names,
                 packages=[pkg for pkg in self._pkgs.values() if pkg.repository == name],
                 build_depends=set([self._pkgs[d].repository for pkg in pkgs for d in pkg.build_depends if d in self._pkgs]).difference([name]),
-                exec_depends=set([self._pkgs[d].repository for pkg in pkgs for d in pkg.exec_depends if d in self._pkgs]).difference([name])
+                exec_depends=set([self._pkgs[d].repository for pkg in pkgs for d in pkg.exec_depends if d in self._pkgs]).difference([name]),
+                test_depends=set([self._pkgs[d].repository for pkg in pkgs for d in pkg.test_depends if d in self._pkgs]).difference([name]),
                 )
+
+    def drop_repository(self, repository):
+        for p in self._repos[repository].packages:
+            del self._pkgs[p.name]
+            # remove pkg from other pkg dependencies
+            for p in self._pkgs.values():
+                p.build_depends.difference_update([p.name])
+                p.exec_depends.difference_update([p.name])
+                p.test_depends.difference_update([p.name])
+
+        del self._repos[repository]
+        # remove repository from other repositories dependencies
+        for r in self._repos.values():
+            r.build_depends.difference_update([repository])
+            r.exec_depends.difference_update([repository])
+            r.test_depends.difference_update([repository])
 
 if __name__ == '__main__':
     ws = Workspace(sys.argv[1] if len(sys.argv) > 1 else ".")
