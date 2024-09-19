@@ -22,24 +22,29 @@ jobs:
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
-      - name: Investigate source repositories
+      - name: Clone sources
         run: |
           sudo add-apt-repository -y ppa:v-launchpad-jochen-sprickerhof-de/sbuild
           sudo apt update
           DEBIAN_FRONTEND=noninteractive sudo apt install -y vcstool catkin
           mkdir src
           vcs import --recursive --shallow --input sources.repos src
+      - name: Extract rosdep keys
+        run: |
           for PKG in $(catkin_topological_order --only-names); do
-            printf "%s:\\n  %s:\\n  - %s\\n" "$PKG" "${{ env.DISTRIBUTION }}" "ros-one-$(printf '%s' "$PKG" | tr '_' '-')" | tee -a local.yaml
+            printf "%s:\n  %s:\n  - %s\n" "$PKG" "${{ env.DISTRIBUTION }}" "ros-one-$(printf '%s' "$PKG" | tr '_' '-')" | tee -a local.yaml
           done
-          mkdir -p ${{ env.AGG }}
-          mv local.yaml ${{ env.AGG }}/local.yaml
-          cp sources.repos ${{ env.AGG }}/sources.repos
       - name: List used workers
         id: worker
         run: |
-          echo "workers=$(cat jobs.yaml | sed -n 's/^\(stage.*\):$/\\1/; T; p')" >> $GITHUB_OUTPUT
-      - name: Store meta data
+          cat jobs.yaml | sed -n '/^stage.*:$/ p'
+          echo "workers=$(cat jobs.yaml | sed -n '/^stage.*:$/ p' | tr -d '\n')" >> $GITHUB_OUTPUT
+      - name: Prepare meta data cache
+        run: |
+          mkdir -p ${{ env.AGG }}
+          mv local.yaml ${{ env.AGG }}/local.yaml
+          cp sources.repos ${{ env.AGG }}/sources.repos
+      - name: Store meta data cache
         uses: actions/cache/save@v4
         with:
           path: ${{ env.AGG }}
