@@ -32,13 +32,13 @@ jobs:
       - name: Extract rosdep keys
         run: |
           for PKG in $(catkin_topological_order --only-names); do
-            printf "%s:\n  %s:\n  - %s\n" "$PKG" "${{ env.DISTRIBUTION }}" "ros-one-$(printf '%s' "$PKG" | tr '_' '-')" | tee -a local.yaml
+            printf "%s:\\n  %s:\\n  - %s\\n" "$PKG" "${{ env.DISTRIBUTION }}" "ros-one-$(printf '%s' "$PKG" | tr '_' '-')" | tee -a local.yaml
           done
       - name: List used workers
         id: worker
         run: |
           cat jobs.yaml | sed -n '/^stage.*:$/ p'
-          echo "workers=$(cat jobs.yaml | sed -n '/^stage.*:$/ p' | tr -d '\n')" >> $GITHUB_OUTPUT
+          echo "workers=$(cat jobs.yaml | sed -n '/^stage.*:$/ p' | tr -d '\\n')" >> $GITHUB_OUTPUT
       - name: Prepare meta data cache
         run: |
           mkdir -p ${{ env.AGG }}
