@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-required_stages = 17
+required_stages = 18
 first_stages = [1, 10]
 workers = first_stages + [5] * (required_stages - len(first_stages))
 
@@ -37,13 +37,13 @@ jobs:
       - name: List used workers
         id: worker
         run: |
-          cat jobs.yaml | sed -n '/^stage.*:$/ p'
+          cat jobs.yaml
           echo "workers=$(cat jobs.yaml | sed -n '/^stage.*:$/ p' | tr -d '\\n')" >> $GITHUB_OUTPUT
       - name: Prepare meta data cache
         run: |
           mkdir -p ${{ env.AGG }}
           mv local.yaml ${{ env.AGG }}/local.yaml
-          cp sources.repos ${{ env.AGG }}/sources.repos
+          cp sources.repos ${{ env.AGG }}/sources_specified.repos
       - name: Store meta data cache
         uses: actions/cache/save@v4
         with:
@@ -67,8 +67,8 @@ for i, workers in enumerate(workers):
             f"    with:\n"
             f"      stage: {i}")
 
-print("""  deploy:
-    needs: stage16
+print(f"""  deploy:
+    needs: stage{i}
     if: always() && !cancelled()
     runs-on: ubuntu-22.04
     env:
@@ -79,9 +79,9 @@ print("""  deploy:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.AGG }}
-          key: apt-repo-stage16-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: apt-repo-stage{i}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            apt-repo-stage16-${{ github.sha }}-${{ github.run_id }}
+            apt-repo-stage{i}-${{ github.sha }}-${{ github.run_id }}
       - name: move packages to repo
         run: |
           mkdir -p /home/runner/apt_repo
