@@ -55,7 +55,7 @@ for i, workers in enumerate(workers):
     for j in range(workers):
         print(f"  stage{i}-worker{j}:\n"
               f"    uses: ./.github/workflows/worker.yaml\n"
-              f"    if: (success() || failure()) && contains( needs.stage-1.outputs.workers, 'stage{i}-worker{j}' )\n"
+              f"    if: (always() && !cancelled()) && contains( needs.stage-1.outputs.workers, 'stage{i}-worker{j}' )\n"
               f"    needs: stage{i-1}\n"
               f"    with:\n"
               f"      worker: stage{i}-worker{j}\n"
@@ -69,7 +69,7 @@ for i, workers in enumerate(workers):
 
 print("""  deploy:
     needs: stage16
-    if: success() || failure() # can get cancelled
+    if: always() && !cancelled()
     runs-on: ubuntu-22.04
     env:
       ROS_DISTRO: one
@@ -87,7 +87,6 @@ print("""  deploy:
           mkdir -p /home/runner/apt_repo
           mv ${{ env.AGG }}/* /home/runner/apt_repo/
       - uses: v4hn/ros-deb-builder-action/deploy@rosotest
-        if: always()
         with:
           BRANCH: ${{ env.DEB_DISTRO }}-${{ env.ROS_DISTRO }}-unstable
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
