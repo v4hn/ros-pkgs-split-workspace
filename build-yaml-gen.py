@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 
+import em
+
 required_stages = 18
 first_stages = [1, 10]
 workers = first_stages + [5] * (required_stages - len(first_stages))
 
-print("""name: build
+template = R"""name: build
 
 on:
   workflow_dispatch:
@@ -21,7 +23,7 @@ jobs:
       workers: ${{ steps.worker.outputs.workers }}
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@@v4
       - name: Clone sources
         run: |
           sudo add-apt-repository -y ppa:v-launchpad-jochen-sprickerhof-de/sbuild
@@ -32,43 +34,40 @@ jobs:
       - name: Extract rosdep keys
         run: |
           for PKG in $(catkin_topological_order --only-names); do
-            printf "%s:\\n  %s:\\n  - %s\\n" "$PKG" "${{ env.DISTRIBUTION }}" "ros-one-$(printf '%s' "$PKG" | tr '_' '-')" | tee -a local.yaml
+            printf "%s:\n  %s:\n  - %s\n" "$PKG" "${{ env.DISTRIBUTION }}" "ros-one-$(printf '%s' "$PKG" | tr '_' '-')" | tee -a local.yaml
           done
       - name: List used workers
         id: worker
         run: |
           cat jobs.yaml
-          echo "workers=$(cat jobs.yaml | sed -n '/^stage.*:$/ p' | tr -d '\\n')" >> $GITHUB_OUTPUT
+          echo "workers=$(cat jobs.yaml | sed -n '/^stage.*:$/ p' | tr -d '\n')" >> $GITHUB_OUTPUT
       - name: Prepare meta data cache
         run: |
           mkdir -p ${{ env.AGG }}
           mv local.yaml ${{ env.AGG }}/local.yaml
           cp sources.repos ${{ env.AGG }}/sources_specified.repos
       - name: Store meta data cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@@v4
         with:
           path: ${{ env.AGG }}
           key: apt-repo-stage-1-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-""", end='')
-
-for i, workers in enumerate(workers):
-    for j in range(workers):
-        print(f"  stage{i}-worker{j}:\n"
-              f"    uses: ./.github/workflows/worker.yaml\n"
-              f"    if: (always() && !cancelled()) && contains( needs.stage-1.outputs.workers, 'stage{i}-worker{j}' )\n"
-              f"    needs: stage{i-1}\n"
-              f"    with:\n"
-              f"      worker: stage{i}-worker{j}\n"
-              f"      depends: stage{i-1}")
-    print(f"  stage{i}:\n"
-            f"    uses: ./.github/workflows/aggregate-debs.yaml\n"
-            f"    if: always() && !cancelled()\n"
-            f"    needs: [{', '.join([f'stage{i}-worker{j}' for j in range(workers)])}]\n"
-            f"    with:\n"
-            f"      stage: {i}")
-
-print(f"""  deploy:
-    needs: stage{i}
+@[for i, workers in stages]@[for j in range(workers)]
+  stage@i-worker@j:
+    uses: ./.github/workflows/worker.yaml
+    if: (always() && !cancelled()) && contains( needs.stage-1.outputs.workers, 'stage@i-worker@j' )
+    needs: stage@(i-1)
+    with:
+      worker: stage@i-worker@j
+      depends: stage@(i-1)@[end for]
+  stage@i:
+    uses: ./.github/workflows/aggregate-debs.yaml
+    if: always() && !cancelled()
+    needs: [@[for j in range(workers)]stage@(i)-worker@j, @[end for]]
+    with:
+      stage: @i
+@[end for]
+  deploy:
+    needs: stage@last_stage
     if: always() && !cancelled()
     runs-on: ubuntu-22.04
     env:
@@ -76,18 +75,22 @@ print(f"""  deploy:
       DEB_DISTRO: jammy
     steps:
       - name: get apt packages from last job
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@@v4
         with:
           path: ${{ env.AGG }}
-          key: apt-repo-stage{i}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: apt-repo-stage@last_stage-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            apt-repo-stage{i}-${{ github.sha }}-${{ github.run_id }}
+            apt-repo-stage@last_stage-${{ github.sha }}-${{ github.run_id }}
       - name: move packages to repo
         run: |
           mkdir -p /home/runner/apt_repo
           mv ${{ env.AGG }}/* /home/runner/apt_repo/
-      - uses: v4hn/ros-deb-builder-action/deploy@rosotest
+      - uses: v4hn/ros-deb-builder-action/deploy@@rosotest
         with:
           BRANCH: ${{ env.DEB_DISTRO }}-${{ env.ROS_DISTRO }}-unstable
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SQUASH_HISTORY: true""")
+          SQUASH_HISTORY: true
+"""
+
+
+print(em.expand(template, stages=enumerate(workers), last_stage=required_stages-1), end='')
