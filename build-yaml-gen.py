@@ -18,7 +18,7 @@ env:
 
 jobs:
   stage-1:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       workers: ${{ steps.worker.outputs.workers }}
     steps:
@@ -69,7 +69,7 @@ jobs:
   deploy:
     needs: stage@last_stage
     if: always() && !cancelled()
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     env:
       ROS_DISTRO: one
       DEB_DISTRO: jammy
@@ -85,7 +85,7 @@ jobs:
         run: |
           mkdir -p /home/runner/apt_repo
           mv ${{ env.AGG }}/* /home/runner/apt_repo/
-      - uses: v4hn/ros-deb-builder-action/deploy@@rosotest
+      - uses: v4hn/ros-deb-builder-action/deploy@@roso-noble
         with:
           BRANCH: ${{ env.DEB_DISTRO }}-${{ env.ROS_DISTRO }}-unstable
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
