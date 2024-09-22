@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@@v4
       - name: Clone sources
         run: |
-          sudo add-apt-repository -y ppa:v-launchpad-jochen-sprickerhof-de/sbuild
+          sudo add-apt-repository -y ppa:v-launchpad-jochen-sprickerhof-de/ros
           sudo apt update
           DEBIAN_FRONTEND=noninteractive sudo apt install -y vcstool catkin
           mkdir src
