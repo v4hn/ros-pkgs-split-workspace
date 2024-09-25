@@ -51,6 +51,8 @@ jobs:
           mkdir -p ${{ env.AGG }}
           mv local.yaml ${{ env.AGG }}/local.yaml
           cp sources.repos ${{ env.AGG }}/sources_specified.repos
+          mkdir -p ${{ env.AGG }}/.github/workflows
+          cp .github/workflows/sync-unstable.yaml ${{ env.AGG }}/.github/workflows/sync-unstable.yaml
       - name: Store meta data cache
         uses: actions/cache/save@@v4
         with:
@@ -88,8 +90,7 @@ jobs:
             apt-repo-stage@last_stage-${{ github.sha }}-${{ github.run_id }}
       - name: move packages to repo
         run: |
-          mkdir -p /home/runner/apt_repo
-          mv ${{ env.AGG }}/* /home/runner/apt_repo/
+          mv ${{ env.AGG }} /home/runner/apt_repo
       - uses: v4hn/ros-deb-builder-action/deploy@@roso-noble
         with:
           BRANCH: ${{ env.DEB_DISTRO }}-${{ env.ROS_DISTRO }}-unstable
