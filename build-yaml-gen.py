@@ -28,11 +28,14 @@ jobs:
         uses: actions/checkout@@v4
       - name: Clone sources
         run: |
+          echo 'Acquire::Retries "20";'                  | sudo tee -a /etc/apt/apt.conf.d/80-retries
+          echo 'Acquire::Retries::Delay::Maximum "300";' | sudo tee -a /etc/apt/apt.conf.d/80-retries
+          echo 'Debug::Acquire::Retries "true";'         | sudo tee -a /etc/apt/apt.conf.d/80-retries
           sudo add-apt-repository -y ppa:v-launchpad-jochen-sprickerhof-de/ros
           sudo apt update
           DEBIAN_FRONTEND=noninteractive sudo apt install -y vcstool catkin
           mkdir src
-          vcs import --recursive --shallow --input sources.repos src
+          vcs import -w 5 --recursive --shallow --input sources.repos src
       - name: Extract rosdep keys
         run: |
           for PKG in $(catkin_topological_order --only-names); do
