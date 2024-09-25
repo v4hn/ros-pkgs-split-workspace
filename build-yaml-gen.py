@@ -2,9 +2,11 @@
 
 import em
 
-required_stages = 18
-first_stages = [1, 10]
-workers = first_stages + [5] * (required_stages - len(first_stages))
+required_stages = 19
+#first_stages = [1, 10]
+#workers = first_stages + [5] * (required_stages - len(first_stages))
+first_stages = [1]
+workers = first_stages + [10] * (required_stages - len(first_stages))
 
 template = R"""name: build
 

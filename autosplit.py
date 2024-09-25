@@ -46,9 +46,10 @@ if __name__ == '__main__':
         defines the number of workers to use for each stage in an infinite generator
         '''
         yield 1 # built requirements cannot be parallelized
-        yield 10 # the first stage contains many independent packages, but eigenpy/ompl delay it anyway
+        #yield 10 # the first stage contains many independent packages, but eigenpy/ompl delay it anyway
         while True: # do not excessively parallelize (though github allows 20 and possibly throttles)
-            yield 5
+            #yield 5
+            yield 10
 
     for i, (stage, workers) in enumerate(zip(stages(ws), nr_of_workers())):
         # repositories with special sbuild options are run in isolation
